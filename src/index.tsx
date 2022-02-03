@@ -1,17 +1,32 @@
+import './index.css';
+
 import React from 'react';
 import ReactDOM from 'react-dom';
-import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
+import { ChakraProvider } from '@chakra-ui/react';
+import { WalletKitProvider } from '@gokiprotocol/walletkit';
+import { BundlrContextProvider } from './contexts/BundlrContext';
 
 ReactDOM.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  <WalletKitProvider
+    defaultNetwork='mainnet-beta'
+    app={{
+      name: 'Celestial Forge',
+      icon: (
+        <img
+          src='https://sp-ao.shortpixel.ai/client/to_webp,q_glossy,ret_img,w_32,h_32/https://asgardarmy.com/wp-content/uploads/2021/10/cropped-logo-192x192.png'
+          alt='Asgard Army'
+        />
+      ),
+    }}
+  >
+    <ChakraProvider>
+      <BundlrContextProvider>
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>
+      </BundlrContextProvider>
+    </ChakraProvider>
+  </WalletKitProvider>,
   document.getElementById('root')
 );
-
-// If you want to start measuring performance in your app, pass a function
-// to log results (for example: reportWebVitals(console.log))
-// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
-reportWebVitals();
