@@ -1,6 +1,12 @@
 // @ts-ignore
 import { WebBundlr } from '@bundlr-network/client/web';
-import { createContext, useContext, useEffect, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
 import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
 import { PublicKey } from '@solana/web3.js';
 
@@ -33,7 +39,7 @@ export const BundlrContextProvider: React.FC = ({ children }) => {
     }
   }, [bundlrFundingAddress, bundlrInstance]);
 
-  async function setBundlrWalletProvider() {
+  const setBundlrWalletProvider = useCallback(async () => {
     const phantomAdapter = new PhantomWalletAdapter();
     await phantomAdapter.connect();
     setWalletProvider(phantomAdapter);
@@ -46,7 +52,7 @@ export const BundlrContextProvider: React.FC = ({ children }) => {
     setBundlrInstance(bundlrInstance);
     const add = await bundlrInstance.utils.getBundlerAddress('solana');
     setBundlrFundingAddress(new PublicKey(add));
-  }
+  }, []);
 
   return (
     <BundlrContext.Provider
