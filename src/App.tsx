@@ -5,24 +5,13 @@ import HomePage from './pages/HomePage';
 
 function App() {
   useEffect(() => {
-    const soldierMints = localStorage.getItem('soldierMints');
-    const weaponMints = localStorage.getItem('weaponMints');
+    fetch(`https://asgardforge.b-cdn.net/mint_list/soldiers.json`)
+      .then((res) => res.json())
+      .then((res) => localStorage.setItem('soldierMints', JSON.stringify(res)));
 
-    if (!soldierMints) {
-      fetch(`https://asgardforge.b-cdn.net/mint_list/soldiers.json`)
-        .then((res) => res.json())
-        .then((res) =>
-          localStorage.setItem('soldierMints', JSON.stringify(res))
-        );
-    }
-
-    if (!weaponMints) {
-      fetch(`https://asgardforge.b-cdn.net/mint_list/weapons.json`)
-        .then((res) => res.json())
-        .then((res) =>
-          localStorage.setItem('weaponMints', JSON.stringify(res))
-        );
-    }
+    fetch(`https://asgardforge.b-cdn.net/mint_list/weapons.json`)
+      .then((res) => res.json())
+      .then((res) => localStorage.setItem('weaponMints', JSON.stringify(res)));
   }, []);
 
   return (

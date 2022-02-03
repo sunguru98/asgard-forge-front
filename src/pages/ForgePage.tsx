@@ -7,6 +7,7 @@ import {
   Heading,
   HStack,
   Image,
+  Link,
   Modal,
   ModalBody,
   ModalContent,
@@ -14,29 +15,40 @@ import {
   ModalHeader,
   ModalOverlay,
   Stack,
+  Text,
   useDisclosure,
   useToast,
   VStack,
 } from '@chakra-ui/react';
-import { MetadataData } from '@metaplex-foundation/mpl-token-metadata';
+import {
+  Creator,
+  MetadataDataData,
+  UpdateMetadata,
+} from '@metaplex-foundation/mpl-token-metadata';
+
 import { useWallet } from '@saberhq/use-solana';
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  Token,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
+import {
+  Keypair,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  Transaction,
+} from '@solana/web3.js';
+import BigNumber from 'bignumber.js';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
+import { useBundlr } from '../contexts/BundlrContext';
+import { UserNFT } from '../types';
+import { drawFusedImage } from '../utils/fuse';
 import { getUserNFTs } from '../utils/getUserNFTs';
 
 export const shortenAddress = (address: string) =>
   address ? `${address.slice(0, 4)}...${address.slice(-4)}` : '';
-
-type UserNFT = {
-  tokenAccount: string;
-  mint: string;
-  metadata: {
-    metadataPDA: string;
-    onChainMetadata: MetadataData;
-    arweaveMetadata: any;
-  };
-};
 
 const ForgePage = () => {
   // All state variables
@@ -52,11 +64,16 @@ const ForgePage = () => {
   const [selectedSoldier, setSelectedSoldier] = useState<UserNFT | null>(null);
   const [selectedWeapon, setSelectedWeapon] = useState<UserNFT | null>(null);
 
+  // Temp
+  const [_, setImage] = useState<string | null>(null);
+  const [step, setStep] = useState<number>(0);
+
   // Custom Hoooks
   const navigate = useNavigate();
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { wallet, disconnect, connection: SOLANA_CONNECTION } = useWallet();
+  const { bundlrInstance, createTransaction, fundAccount } = useBundlr();
 
   useEffect(() => {
     if (!wallet) navigate('/');
@@ -85,8 +102,29 @@ const ForgePage = () => {
 
           setSoliderNFTs(sNFTs);
           setWeaponNFTs(wNFTs);
+
+          const transactionProgress = JSON.parse(
+            localStorage.getItem('transactionProgress') || '{}'
+          );
+
+          if (transactionProgress.selectedSoldier) {
+            setSelectedSoldier(
+              sNFTs.find(
+                (nft) => nft.mint === transactionProgress.selectedSoldier
+              ) || null
+            );
+          }
+
+          if (transactionProgress.selectedWeapon) {
+            setSelectedWeapon(
+              wNFTs.find(
+                (nft) => nft.mint === transactionProgress.selectedWeapon
+              ) || null
+            );
+          }
         }
       } catch (err) {
+        console.error(err);
         toast({
           title: 'Error',
           status: 'error',
@@ -101,35 +139,310 @@ const ForgePage = () => {
     })();
   }, []);
 
+  const changeJSONMetadata = (soldierNFT: UserNFT, weaponNFT: UserNFT) => {
+    const { metadata: soldierMetadata } = soldierNFT;
+    const { metadata: weaponMetadata } = weaponNFT;
+
+    return {
+      ...soldierMetadata.arweaveMetadata,
+      attributes: [
+        ...soldierMetadata.arweaveMetadata.attributes.filter(
+          (a: { trait_type: string; value: string }) =>
+            a.trait_type !== 'Weapon'
+        ),
+        { ...weaponMetadata.arweaveMetadata.attributes[0] },
+      ],
+    };
+  };
+
+  const createArweavePathManifest = (
+    imageDataId: string,
+    jsonDataId: string
+  ) => {
+    return {
+      manifest: 'arweave/paths',
+      version: '0.1.0',
+      paths: {
+        'image.png': {
+          id: imageDataId,
+        },
+        'metadata.json': {
+          id: jsonDataId,
+        },
+      },
+      index: {
+        path: 'metadata.json',
+      },
+    };
+  };
+
+  const handleFuse = async () => {
+    try {
+      if (!wallet?.publicKey) throw new Error('Wallet not connected');
+      if (!selectedWeapon || !selectedSoldier)
+        throw new Error('Weapon/Soldier missing for fusion');
+
+      setStep(1);
+      const baseImage = await drawFusedImage(selectedSoldier, selectedWeapon);
+
+      const imageBuffer = Buffer.from(
+        baseImage.replace('data:image/png;base64,', ''),
+        'base64'
+      );
+      setImage(baseImage);
+      const bundlrBalance = (
+        (await bundlrInstance.getLoadedBalance()) as BigNumber
+      ).toNumber();
+
+      console.log(`BUNDLR BALANCE: ${bundlrBalance}`);
+
+      if (bundlrBalance === 0) {
+        const isFunded = await fundAccount(0.001 * LAMPORTS_PER_SOL);
+        if (!isFunded)
+          throw new Error('Account unable to fund for upload costs');
+      }
+
+      setStep(2);
+
+      const transactionProgress = JSON.parse(
+        localStorage.getItem('transactionProgress') || '{}'
+      );
+
+      let imageId = transactionProgress.imageLink;
+      let jsonId = transactionProgress.jsonLink;
+      let manifestId = transactionProgress.manifestLink;
+
+      const initialData = {
+        selectedSoldier: selectedSoldier.mint,
+        selectedWeapon: selectedWeapon.mint,
+      };
+
+      if (!imageId) {
+        const imageTx = await createTransaction(imageBuffer, 'image/png');
+        if (!imageTx) throw new Error('Image Upload Failed');
+        localStorage.setItem(
+          'transactionProgress',
+          JSON.stringify({
+            ...initialData,
+            imageLink: `https://arweave.net/${imageTx.id}`,
+          })
+        );
+        imageId = `https://arweave.net/${imageTx.id}`;
+        setStep(3);
+      }
+
+      if (!jsonId) {
+        const newJSON = changeJSONMetadata(selectedSoldier, selectedWeapon);
+        const jsonTx = await createTransaction(
+          JSON.stringify({
+            ...newJSON,
+            image: imageId,
+            properties: {
+              ...newJSON.properties,
+              files: [{ type: 'image/png', uri: imageId }],
+            },
+          }),
+          'application/json'
+        );
+
+        if (!jsonTx) throw new Error('Metadata upload failed');
+
+        localStorage.setItem(
+          'transactionProgress',
+          JSON.stringify({
+            ...initialData,
+            imageLink: imageId,
+            jsonLink: `https://arweave.net/${jsonTx.id}`,
+          })
+        );
+        jsonId = `https://arweave.net/${jsonTx.id}`;
+        setStep(4);
+      }
+
+      if (!manifestId) {
+        const manifestTx = await createTransaction(
+          JSON.stringify(createArweavePathManifest(imageId, jsonId)),
+          'application/x.arweave-manifest+json'
+        );
+
+        if (!manifestTx) throw new Error('Manifest upload failed');
+
+        localStorage.setItem(
+          'transactionProgress',
+          JSON.stringify({
+            ...initialData,
+            imageLink: imageId,
+            jsonLink: jsonId,
+            manifestLink: `https://arweave.net/${manifestTx.id}`,
+          })
+        );
+        manifestId = `https://arweave.net/${manifestTx.id}`;
+        setStep(5);
+      }
+
+      const txProgress = localStorage.getItem('transactionProgress');
+      if (!txProgress)
+        throw new Error('Transaction for upload not found. Please try again');
+      setStep(5);
+
+      const updateAuthorityKeypair = Keypair.fromSecretKey(
+        Uint8Array.from(
+          JSON.parse(process.env.REACT_APP_UPDATE_AUTHORITY_PRIVATE!)
+        )
+      );
+
+      const burnerWallet = new PublicKey(
+        process.env.REACT_APP_WEAPON_BURNER_WALLET || ''
+      );
+
+      console.log(burnerWallet.toString());
+
+      const { name, sellerFeeBasisPoints, creators, symbol } =
+        selectedSoldier.metadata.onChainMetadata.data;
+
+      const { instructions: updateMetadataIx } = new UpdateMetadata(
+        {
+          feePayer: wallet.publicKey,
+        },
+        {
+          metadata: new PublicKey(selectedSoldier.metadata.metadataPDA),
+          updateAuthority: updateAuthorityKeypair.publicKey,
+          metadataData: new MetadataDataData({
+            name,
+            symbol,
+            sellerFeeBasisPoints,
+            creators:
+              creators?.map(
+                ({ address, share, verified }) =>
+                  new Creator({ address, share, verified })
+              ) || null,
+            uri: jsonId,
+          }),
+        }
+      );
+
+      const transaction = new Transaction({
+        feePayer: wallet.publicKey,
+        recentBlockhash: (await SOLANA_CONNECTION.getRecentBlockhash())
+          .blockhash,
+      });
+
+      transaction.add(...updateMetadataIx);
+
+      const receiverTokenAddress = await Token.getAssociatedTokenAddress(
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+        TOKEN_PROGRAM_ID,
+        new PublicKey(selectedWeapon.mint),
+        burnerWallet
+      );
+
+      if (!(await SOLANA_CONNECTION.getAccountInfo(receiverTokenAddress))) {
+        transaction.add(
+          Token.createAssociatedTokenAccountInstruction(
+            ASSOCIATED_TOKEN_PROGRAM_ID,
+            TOKEN_PROGRAM_ID,
+            new PublicKey(selectedWeapon.mint),
+            receiverTokenAddress,
+            burnerWallet,
+            wallet.publicKey
+          )
+        );
+      }
+
+      transaction.add(
+        Token.createTransferCheckedInstruction(
+          TOKEN_PROGRAM_ID,
+          new PublicKey(selectedWeapon.tokenAccount),
+          new PublicKey(selectedWeapon.mint),
+          receiverTokenAddress,
+          wallet.publicKey,
+          [],
+          1,
+          0
+        )
+      );
+
+      const signedTx = await wallet.signTransaction(transaction);
+      signedTx.partialSign(updateAuthorityKeypair);
+
+      const txHash = await SOLANA_CONNECTION.sendRawTransaction(
+        signedTx.serialize()
+      );
+      await SOLANA_CONNECTION.confirmTransaction(txHash);
+
+      toast({
+        title: 'Fusion Complete',
+        status: 'success',
+        position: 'bottom',
+        description: (
+          <>
+            <Text>
+              Tx Success.{' '}
+              <Link href={`https://solscan.io/tx/${txHash}`}>View Tx</Link>
+            </Text>
+          </>
+        ),
+      });
+
+      localStorage.removeItem('transactionProgress');
+      setSelectedSoldier(null);
+      setSelectedWeapon(null);
+      setImage(null);
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: 'Error',
+        status: 'error',
+        position: 'bottom',
+        description: (err as Error).message,
+      });
+    } finally {
+      setStep(0);
+      onClose();
+    }
+  };
+
   const renderMyItems = (minImageHeight = '220px') => (
     <>
       <Heading color='white' mb={4}>
         My items
       </Heading>
-      <Grid
-        templateColumns='repeat(3, 1fr)'
-        gap='20px'
-        maxH='100%'
-        overflow='auto'
-      >
-        {weaponNFTs.map((nft) => (
-          <GridItem cursor='pointer' onClick={() => setSelectedWeapon(nft)}>
-            <Image
-              border={
-                selectedWeapon?.mint === nft.mint ? '10px solid purple' : 'none'
-              }
-              src={nft.metadata.arweaveMetadata.image}
-              w='100%'
-              minH={minImageHeight}
-              mb={4}
-              padding='10px'
-            />
-            <Heading color='white' fontSize='xl' textAlign='center'>
-              {nft.metadata.arweaveMetadata.attributes[0].value}
-            </Heading>
-          </GridItem>
-        ))}
-      </Grid>
+      {weaponNFTs.length > 0 ? (
+        <Grid
+          templateColumns='repeat(3, 1fr)'
+          gap='20px'
+          maxH='100%'
+          overflow='auto'
+        >
+          {weaponNFTs.map((nft) => (
+            <GridItem
+              key={nft.tokenAccount}
+              cursor={selectedSoldier ? 'pointer' : 'default'}
+              onClick={() => setSelectedWeapon(selectedSoldier ? nft : null)}
+            >
+              <Image
+                border={
+                  selectedSoldier && selectedWeapon?.mint === nft.mint
+                    ? '10px solid purple'
+                    : 'none'
+                }
+                src={nft.metadata.arweaveMetadata.image}
+                w='100%'
+                minH={minImageHeight}
+                mb={4}
+                padding='10px'
+              />
+              <Heading color='white' fontSize='xl' textAlign='center'>
+                {nft.metadata.arweaveMetadata.attributes[0].value}
+              </Heading>
+            </GridItem>
+          ))}
+        </Grid>
+      ) : (
+        <Heading textAlign='center' color='white' marginTop='50%'>
+          No Weapon NFTs owned
+        </Heading>
+      )}
     </>
   );
 
@@ -147,6 +460,7 @@ const ForgePage = () => {
             onClick={() => {
               setSelectedSoldier(null);
               setSelectedWeapon(null);
+              setImage(null);
             }}
           >
             Back
@@ -176,7 +490,16 @@ const ForgePage = () => {
       flexDirection='column'
     >
       <HStack mb='4' w='100%' justify='space-between'>
-        <Image src={logo} width='200px' />
+        <Image
+          src={logo}
+          width='200px'
+          cursor='pointer'
+          onClick={() => {
+            setSelectedWeapon(null);
+            setSelectedSoldier(null);
+            setImage(null);
+          }}
+        />
         <Button onClick={disconnect} colorScheme='purple'>
           Connected to {shortenAddress(wallet.publicKey.toString())}
         </Button>
@@ -221,11 +544,19 @@ const ForgePage = () => {
                   >
                     {soldierNFTs.map((nft) => (
                       <GridItem
-                        cursor='pointer'
-                        onClick={() => setSelectedSoldier(nft)}
+                        key={nft.tokenAccount}
+                        cursor={weaponNFTs.length > 0 ? 'pointer' : 'default'}
+                        onClick={() =>
+                          weaponNFTs.length > 0 ? setSelectedSoldier(nft) : null
+                        }
                       >
                         <Image
-                          _hover={{ border: '5px solid purple' }}
+                          _hover={{
+                            border:
+                              weaponNFTs.length > 0
+                                ? '5px solid purple'
+                                : 'none',
+                          }}
                           padding='10px'
                           src={nft.metadata.arweaveMetadata.image}
                           w='100%'
@@ -257,7 +588,19 @@ const ForgePage = () => {
         )}
       </HStack>
 
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+      <Modal
+        isOpen={isOpen}
+        onClose={
+          step === 0
+            ? () => {
+                setSelectedSoldier(null);
+                setImage(null);
+                setSelectedWeapon(null);
+              }
+            : () => {}
+        }
+        isCentered
+      >
         <ModalOverlay />
         <ModalContent
           background='rgba(0, 0, 0, .75)'
@@ -270,34 +613,49 @@ const ForgePage = () => {
               <Heading>UPGRADE</Heading>
             </ModalHeader>
             <ModalBody>
-              <Heading fontWeight='normal' textAlign='center' margin='auto'>
-                You are about to improve your soldier. Do you accept?
+              <Heading
+                padding='10px'
+                fontWeight='normal'
+                textAlign='center'
+                margin='auto'
+                fontSize='28px'
+              >
+                {step >= 1 ? (
+                  <>
+                    Please don't close or refresh. <br /> Processing Step {step}{' '}
+                    of 5
+                  </>
+                ) : (
+                  <>You are about to improve your soldier. Do you accept?</>
+                )}
               </Heading>
             </ModalBody>
 
-            <ModalFooter mb='50px' w='100%' display='flex'>
-              <Button
-                size='lg'
-                width='50%'
-                height='60px'
-                fontSize='x-large'
-                colorScheme='purple'
-                mr={3}
-                onClick={onClose}
-              >
-                Yes
-              </Button>
-              <Button
-                size='lg'
-                width='50%'
-                height='60px'
-                fontSize='x-large'
-                colorScheme='whiteAlpha'
-                onClick={onClose}
-              >
-                No
-              </Button>
-            </ModalFooter>
+            {step === 0 && (
+              <ModalFooter mb='50px' w='100%' display='flex'>
+                <Button
+                  size='lg'
+                  width='50%'
+                  height='60px'
+                  fontSize='x-large'
+                  colorScheme='purple'
+                  mr={3}
+                  onClick={handleFuse}
+                >
+                  Yes
+                </Button>
+                <Button
+                  size='lg'
+                  width='50%'
+                  height='60px'
+                  fontSize='x-large'
+                  colorScheme='whiteAlpha'
+                  onClick={onClose}
+                >
+                  No
+                </Button>
+              </ModalFooter>
+            )}
           </VStack>
         </ModalContent>
       </Modal>

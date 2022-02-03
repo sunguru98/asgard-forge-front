@@ -12,13 +12,11 @@ import axios from 'axios';
 async function getMetadata(connection: Connection, mint: PublicKey) {
   const metadataPDA = await Metadata.getPDA(mint);
   const { data: metadata } = await Metadata.load(connection, metadataPDA);
-
-  const { data: arweaveMetadata } = await axios.get(metadata.data.uri);
-
+  const res = metadata.data.uri ? await axios.get(metadata.data.uri) : null;
   return {
     metadataPDA: metadataPDA.toString(),
     onChainMetadata: metadata,
-    arweaveMetadata,
+    arweaveMetadata: res?.data || null,
   };
 }
 
@@ -61,6 +59,8 @@ export async function getUserNFTs(connection: Connection, user: PublicKey) {
     }
   );
 
+  console.log(tokens);
+
   const filteredTokens = await Promise.all(
     tokens
       .filter((token) => {
@@ -80,6 +80,8 @@ export async function getUserNFTs(connection: Connection, user: PublicKey) {
         ),
       }))
   );
+
+  console.log(filteredTokens);
 
   return filteredTokens.filter((filteredToken: any) => {
     return (
