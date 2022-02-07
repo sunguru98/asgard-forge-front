@@ -427,7 +427,7 @@ const ForgePage = () => {
           <>
             <Text>
               Tx Success.{' '}
-              <Link href={`https://solscan.io/tx/${txHash}`}>
+              <Link href={`https://solscan.io/tx/${txHash}`} isExternal>
                 <strong>View Tx</strong>
               </Link>
             </Text>
