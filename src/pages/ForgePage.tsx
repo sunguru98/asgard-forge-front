@@ -443,7 +443,7 @@ const ForgePage = () => {
 
       fetchUserNFTs();
     } catch (err) {
-      console.error(err);
+      console.error((err as Error).message);
       toast({
         title: 'Error',
         status: 'error',
@@ -521,7 +521,7 @@ const ForgePage = () => {
           </Button>
           <Button
             colorScheme='purple'
-            disabled={!selectedWeapon && tokenBalance >= ASGARD_TOKEN_FEE}
+            disabled={!(selectedWeapon && tokenBalance >= ASGARD_TOKEN_FEE)}
             w='50%'
             height='7vh'
             fontSize='30px'
@@ -689,8 +689,8 @@ const ForgePage = () => {
               >
                 {step >= 1 ? (
                   <>
-                    Please don't close or refresh. <br /> Processing Step {step}{' '}
-                    of 5
+                    Please don't close or refresh. <br /> It may take several
+                    seconds for each step <br /> Processing Step {step} of 5
                   </>
                 ) : (
                   <>You are about to improve your soldier. Do you accept?</>
