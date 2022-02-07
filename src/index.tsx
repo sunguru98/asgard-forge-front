@@ -10,6 +10,9 @@ import { BundlrContextProvider } from './contexts/BundlrContext';
 ReactDOM.render(
   <WalletKitProvider
     defaultNetwork='mainnet-beta'
+    networkConfigs={{
+      'mainnet-beta': { endpoint: 'https://ssc-dao.genesysgo.net/' },
+    }}
     app={{
       name: 'Celestial Forge',
       icon: (

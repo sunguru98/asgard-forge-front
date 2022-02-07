@@ -161,7 +161,7 @@ const ForgePage = () => {
           (a: { trait_type: string; value: string }) =>
             a.trait_type !== 'Weapon'
         ),
-        { ...weaponAttribute },
+        { trait_type: 'Weapon', value: weaponAttribute.value },
       ],
     };
   };
