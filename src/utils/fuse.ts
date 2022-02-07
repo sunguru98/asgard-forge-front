@@ -23,7 +23,6 @@ export const drawFusedImage = async (
     (a: any) => a.trait_type === 'Weapon Name'
   );
 
-  console.log(weaponAttribute);
   const images = await Promise.all(
     attributes.map(
       ({ trait_type, value }: { trait_type: string; value: string }) => {

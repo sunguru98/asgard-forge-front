@@ -210,8 +210,8 @@ const ForgePage = () => {
 
       console.log(`BUNDLR BALANCE: ${bundlrBalance}`);
 
-      if (bundlrBalance < COST_FOR_UPLOAD / LAMPORTS_PER_SOL) {
-        const isFunded = await fundAccount(205_000 / LAMPORTS_PER_SOL);
+      if (bundlrBalance < COST_FOR_UPLOAD) {
+        const isFunded = await fundAccount(205_000);
         if (!isFunded)
           throw new Error('Account unable to fund for upload costs');
       }
