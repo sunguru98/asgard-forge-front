@@ -9,7 +9,7 @@ import { BundlrContextProvider } from './contexts/BundlrContext';
 
 ReactDOM.render(
   <WalletKitProvider
-    defaultNetwork='localnet'
+    defaultNetwork='mainnet-beta'
     app={{
       name: 'Celestial Forge',
       icon: (

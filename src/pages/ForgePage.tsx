@@ -39,7 +39,7 @@ import {
   Transaction,
 } from '@solana/web3.js';
 import BigNumber from 'bignumber.js';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from '../assets/logo.png';
 import { useBundlr } from '../contexts/BundlrContext';
@@ -49,6 +49,12 @@ import { getUserNFTs } from '../utils/getUserNFTs';
 
 export const shortenAddress = (address: string) =>
   address ? `${address.slice(0, 4)}...${address.slice(-4)}` : '';
+
+export const COST_FOR_UPLOAD = 203_878;
+export const ASGARD_TOKEN_FEE = 10_000;
+export const ASGARD_TOKEN_MINT = new PublicKey(
+  'BQTN97PwrQGkbNepQxjvcYfRPYbPNgd5PqoioYwBt4qX'
+);
 
 const ForgePage = () => {
   // All state variables
@@ -63,9 +69,11 @@ const ForgePage = () => {
   );
   const [selectedSoldier, setSelectedSoldier] = useState<UserNFT | null>(null);
   const [selectedWeapon, setSelectedWeapon] = useState<UserNFT | null>(null);
+  const [tokenBalance, setTokenBalance] = useState(0);
+  const [tokenAccount, setTokenAccount] = useState<PublicKey | null>(null);
 
   // Temp
-  const [_, setImage] = useState<string | null>(null);
+  const [, setImage] = useState<string | null>(null);
   const [step, setStep] = useState<number>(0);
 
   // Custom Hoooks
@@ -75,73 +83,76 @@ const ForgePage = () => {
   const { wallet, disconnect, connection: SOLANA_CONNECTION } = useWallet();
   const { bundlrInstance, createTransaction, fundAccount } = useBundlr();
 
+  const fetchUserNFTs = useCallback(async () => {
+    try {
+      setIsFetching(true);
+
+      if (weaponMints.length === 0 || soldierMints.length === 0)
+        throw new Error('Mints not present');
+
+      if (wallet?.publicKey) {
+        console.log('FETCHING USER NFTS');
+        const { userNFTs, asgardTokenBalance, asgardTokenAccount } =
+          await getUserNFTs(SOLANA_CONNECTION, wallet.publicKey);
+
+        const wNFTs = userNFTs.filter((nft) => weaponMints.includes(nft.mint));
+        const sNFTs = userNFTs.filter((nft) => soldierMints.includes(nft.mint));
+
+        setSoliderNFTs(sNFTs);
+        setWeaponNFTs(wNFTs);
+        setTokenBalance(asgardTokenBalance);
+        setTokenAccount(asgardTokenAccount);
+
+        const transactionProgress = JSON.parse(
+          localStorage.getItem('transactionProgress') || '{}'
+        );
+
+        if (transactionProgress.selectedSoldier) {
+          setSelectedSoldier(
+            sNFTs.find(
+              (nft) => nft.mint === transactionProgress.selectedSoldier
+            ) || null
+          );
+        }
+
+        if (transactionProgress.selectedWeapon) {
+          setSelectedWeapon(
+            wNFTs.find(
+              (nft) => nft.mint === transactionProgress.selectedWeapon
+            ) || null
+          );
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: 'Error',
+        status: 'error',
+        position: 'bottom',
+        description: (err as Error).message,
+      });
+      setSoliderNFTs([]);
+      setWeaponNFTs([]);
+    } finally {
+      setIsFetching(false);
+    }
+  }, [SOLANA_CONNECTION, soldierMints, toast, wallet?.publicKey, weaponMints]);
+
   useEffect(() => {
     if (!wallet) navigate('/');
   }, [wallet, navigate]);
 
   useEffect(() => {
-    (async function () {
-      try {
-        setIsFetching(true);
-
-        if (weaponMints.length === 0 || soldierMints.length === 0)
-          throw new Error('Mints not present');
-
-        if (wallet?.publicKey) {
-          const userNFTs = await getUserNFTs(
-            SOLANA_CONNECTION,
-            wallet.publicKey
-          );
-
-          const wNFTs = userNFTs.filter((nft) =>
-            weaponMints.includes(nft.mint)
-          );
-          const sNFTs = userNFTs.filter((nft) =>
-            soldierMints.includes(nft.mint)
-          );
-
-          setSoliderNFTs(sNFTs);
-          setWeaponNFTs(wNFTs);
-
-          const transactionProgress = JSON.parse(
-            localStorage.getItem('transactionProgress') || '{}'
-          );
-
-          if (transactionProgress.selectedSoldier) {
-            setSelectedSoldier(
-              sNFTs.find(
-                (nft) => nft.mint === transactionProgress.selectedSoldier
-              ) || null
-            );
-          }
-
-          if (transactionProgress.selectedWeapon) {
-            setSelectedWeapon(
-              wNFTs.find(
-                (nft) => nft.mint === transactionProgress.selectedWeapon
-              ) || null
-            );
-          }
-        }
-      } catch (err) {
-        console.error(err);
-        toast({
-          title: 'Error',
-          status: 'error',
-          position: 'bottom',
-          description: (err as Error).message,
-        });
-        setSoliderNFTs([]);
-        setWeaponNFTs([]);
-      } finally {
-        setIsFetching(false);
-      }
-    })();
+    fetchUserNFTs();
   }, []);
 
   const changeJSONMetadata = (soldierNFT: UserNFT, weaponNFT: UserNFT) => {
     const { metadata: soldierMetadata } = soldierNFT;
     const { metadata: weaponMetadata } = weaponNFT;
+
+    const weaponAttribute = weaponMetadata.arweaveMetadata.attributes.find(
+      (a: any) => a.trait_type === 'Weapon Name'
+    );
 
     return {
       ...soldierMetadata.arweaveMetadata,
@@ -150,7 +161,7 @@ const ForgePage = () => {
           (a: { trait_type: string; value: string }) =>
             a.trait_type !== 'Weapon'
         ),
-        { ...weaponMetadata.arweaveMetadata.attributes[0] },
+        { ...weaponAttribute },
       ],
     };
   };
@@ -182,22 +193,25 @@ const ForgePage = () => {
       if (!selectedWeapon || !selectedSoldier)
         throw new Error('Weapon/Soldier missing for fusion');
 
+      if (!tokenAccount) throw new Error('Insufficient ASGARD for forge');
+
       setStep(1);
       const baseImage = await drawFusedImage(selectedSoldier, selectedWeapon);
+      setImage(baseImage);
 
       const imageBuffer = Buffer.from(
         baseImage.replace('data:image/png;base64,', ''),
         'base64'
       );
-      setImage(baseImage);
+
       const bundlrBalance = (
         (await bundlrInstance.getLoadedBalance()) as BigNumber
       ).toNumber();
 
       console.log(`BUNDLR BALANCE: ${bundlrBalance}`);
 
-      if (bundlrBalance === 0) {
-        const isFunded = await fundAccount(0.001 * LAMPORTS_PER_SOL);
+      if (bundlrBalance < COST_FOR_UPLOAD / LAMPORTS_PER_SOL) {
+        const isFunded = await fundAccount(205_000 / LAMPORTS_PER_SOL);
         if (!isFunded)
           throw new Error('Account unable to fund for upload costs');
       }
@@ -295,8 +309,6 @@ const ForgePage = () => {
         process.env.REACT_APP_WEAPON_BURNER_WALLET || ''
       );
 
-      console.log(burnerWallet.toString());
-
       const { name, sellerFeeBasisPoints, creators, symbol } =
         selectedSoldier.metadata.onChainMetadata.data;
 
@@ -349,6 +361,28 @@ const ForgePage = () => {
         );
       }
 
+      const receiverAsgardTokenAddress = await Token.getAssociatedTokenAddress(
+        ASSOCIATED_TOKEN_PROGRAM_ID,
+        TOKEN_PROGRAM_ID,
+        ASGARD_TOKEN_MINT,
+        burnerWallet
+      );
+
+      if (
+        !(await SOLANA_CONNECTION.getAccountInfo(receiverAsgardTokenAddress))
+      ) {
+        transaction.add(
+          Token.createAssociatedTokenAccountInstruction(
+            ASSOCIATED_TOKEN_PROGRAM_ID,
+            TOKEN_PROGRAM_ID,
+            ASGARD_TOKEN_MINT,
+            receiverAsgardTokenAddress,
+            burnerWallet,
+            wallet.publicKey
+          )
+        );
+      }
+
       transaction.add(
         Token.createTransferCheckedInstruction(
           TOKEN_PROGRAM_ID,
@@ -362,12 +396,27 @@ const ForgePage = () => {
         )
       );
 
+      transaction.add(
+        Token.createTransferCheckedInstruction(
+          TOKEN_PROGRAM_ID,
+          tokenAccount,
+          ASGARD_TOKEN_MINT,
+          receiverAsgardTokenAddress,
+          wallet.publicKey,
+          [],
+          ASGARD_TOKEN_FEE * LAMPORTS_PER_SOL,
+          9
+        )
+      );
+
       const signedTx = await wallet.signTransaction(transaction);
       signedTx.partialSign(updateAuthorityKeypair);
 
       const txHash = await SOLANA_CONNECTION.sendRawTransaction(
-        signedTx.serialize()
+        signedTx.serialize(),
+        { skipPreflight: true, preflightCommitment: 'confirmed' }
       );
+
       await SOLANA_CONNECTION.confirmTransaction(txHash);
 
       toast({
@@ -378,7 +427,9 @@ const ForgePage = () => {
           <>
             <Text>
               Tx Success.{' '}
-              <Link href={`https://solscan.io/tx/${txHash}`}>View Tx</Link>
+              <Link href={`https://solscan.io/tx/${txHash}`}>
+                <strong>View Tx</strong>
+              </Link>
             </Text>
           </>
         ),
@@ -388,6 +439,8 @@ const ForgePage = () => {
       setSelectedSoldier(null);
       setSelectedWeapon(null);
       setImage(null);
+
+      fetchUserNFTs();
     } catch (err) {
       console.error(err);
       toast({
@@ -433,7 +486,7 @@ const ForgePage = () => {
                 padding='10px'
               />
               <Heading color='white' fontSize='xl' textAlign='center'>
-                {nft.metadata.arweaveMetadata.attributes[0].value}
+                {nft.metadata.arweaveMetadata.attributes[1].value}
               </Heading>
             </GridItem>
           ))}
@@ -467,7 +520,7 @@ const ForgePage = () => {
           </Button>
           <Button
             colorScheme='purple'
-            disabled={!selectedWeapon}
+            disabled={!selectedWeapon && tokenBalance >= ASGARD_TOKEN_FEE}
             w='50%'
             height='7vh'
             fontSize='30px'
@@ -500,9 +553,14 @@ const ForgePage = () => {
             setImage(null);
           }}
         />
-        <Button onClick={disconnect} colorScheme='purple'>
-          Connected to {shortenAddress(wallet.publicKey.toString())}
-        </Button>
+        <HStack spacing='20px'>
+          <Heading fontSize='20px' color='white'>
+            $ASGARD Balance: {tokenBalance}
+          </Heading>
+          <Button onClick={disconnect} colorScheme='purple'>
+            Connected to {shortenAddress(wallet.publicKey.toString())}
+          </Button>
+        </HStack>
       </HStack>
 
       <HStack
@@ -514,11 +572,7 @@ const ForgePage = () => {
       >
         {isFetching ? (
           <Heading color='white' textAlign='center' margin='auto'>
-            Fetching your NFTs ...
-          </Heading>
-        ) : soldierNFTs.length === 0 || weaponNFTs.length === 0 ? (
-          <Heading color='white' textAlign='center' margin='auto'>
-            Connected wallet doesn't possess enough soldier/weapon NFTs ...
+            Preparing for Forge ...
           </Heading>
         ) : (
           <>
@@ -536,42 +590,54 @@ const ForgePage = () => {
                   <Heading color='white' mb={4}>
                     My Divine Soldiers
                   </Heading>
-                  <Grid
-                    templateColumns='repeat(3, 1fr)'
-                    gap='20px'
-                    maxH='100%'
-                    overflow='auto'
-                  >
-                    {soldierNFTs.map((nft) => (
-                      <GridItem
-                        key={nft.tokenAccount}
-                        cursor={weaponNFTs.length > 0 ? 'pointer' : 'default'}
-                        onClick={() =>
-                          weaponNFTs.length > 0 ? setSelectedSoldier(nft) : null
-                        }
-                      >
-                        <Image
-                          _hover={{
-                            border:
-                              weaponNFTs.length > 0
-                                ? '5px solid purple'
-                                : 'none',
-                          }}
-                          padding='10px'
-                          src={nft.metadata.arweaveMetadata.image}
-                          w='100%'
-                          minH='350px'
-                          mb={4}
-                        />
-                        <Heading color='white' fontSize='xl' textAlign='center'>
-                          {nft.metadata.onChainMetadata.data.name.replace(
-                            'Divine Soldier',
-                            ''
-                          )}
-                        </Heading>
-                      </GridItem>
-                    ))}
-                  </Grid>
+                  {soldierNFTs.length > 0 ? (
+                    <Grid
+                      templateColumns='repeat(3, 1fr)'
+                      gap='20px'
+                      maxH='100%'
+                      overflow='auto'
+                    >
+                      {soldierNFTs.map((nft) => (
+                        <GridItem
+                          key={nft.tokenAccount}
+                          cursor={weaponNFTs.length > 0 ? 'pointer' : 'default'}
+                          onClick={() =>
+                            weaponNFTs.length > 0
+                              ? setSelectedSoldier(nft)
+                              : null
+                          }
+                        >
+                          <Image
+                            _hover={{
+                              border:
+                                weaponNFTs.length > 0
+                                  ? '5px solid purple'
+                                  : 'none',
+                            }}
+                            padding='10px'
+                            src={nft.metadata.arweaveMetadata.image}
+                            w='100%'
+                            minH='350px'
+                            mb={4}
+                          />
+                          <Heading
+                            color='white'
+                            fontSize='xl'
+                            textAlign='center'
+                          >
+                            {nft.metadata.onChainMetadata.data.name.replace(
+                              'Divine Soldier',
+                              ''
+                            )}
+                          </Heading>
+                        </GridItem>
+                      ))}
+                    </Grid>
+                  ) : (
+                    <Heading textAlign='center' color='white' marginTop='50%'>
+                      No Soldier NFTs owned
+                    </Heading>
+                  )}
                 </>
               )}
             </Box>

@@ -1,5 +1,5 @@
 // @ts-ignore
-import { WebBundlr, BundlrTransaction } from '@bundlr-network/client/web';
+import { WebBundlr } from '@bundlr-network/client/web';
 import {
   createContext,
   useCallback,
@@ -25,8 +25,8 @@ export const BundlrContext = createContext<{
   bundlrInstance: null,
   bundlrFundingAddress: null,
   setBundlrWalletProvider: async () => {},
-  fundAccount: async (number: number) => true,
-  createTransaction: async (data: Buffer | string, dataType: string) => null,
+  fundAccount: async (_: number) => true,
+  createTransaction: async (_: Buffer | string, __: string) => null,
 });
 
 export const useBundlr = () => useContext(BundlrContext);

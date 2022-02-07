@@ -19,14 +19,18 @@ export const drawFusedImage = async (
   CANVAS_CTX.clearRect(0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
 
   const { attributes } = soldierNFT.metadata.arweaveMetadata;
+  const weaponAttribute = weaponNFT.metadata.arweaveMetadata.attributes.find(
+    (a: any) => a.trait_type === 'Weapon Name'
+  );
 
+  console.log(weaponAttribute);
   const images = await Promise.all(
     attributes.map(
       ({ trait_type, value }: { trait_type: string; value: string }) => {
         return loadImage(
-          trait_type !== 'Weapon'
+          !['Weapon', 'Type'].includes(trait_type)
             ? `${BASE_LAYER_URL}/${trait_type}/${value.replace(/ /g, '_')}.png`
-            : `${WEAPON_LAYER_URL}/${weaponNFT.metadata.arweaveMetadata.attributes[0].value.replace(
+            : `${WEAPON_LAYER_URL}/${weaponAttribute.value.replace(
                 / /g,
                 '_'
               )}.png`

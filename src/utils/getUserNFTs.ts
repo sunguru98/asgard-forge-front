@@ -9,6 +9,8 @@ import {
 } from '@metaplex-foundation/mpl-token-metadata';
 import axios from 'axios';
 
+import { ASGARD_TOKEN_MINT } from '../pages/ForgePage';
+
 async function getMetadata(connection: Connection, mint: PublicKey) {
   const metadataPDA = await Metadata.getPDA(mint);
   const { data: metadata } = await Metadata.load(connection, metadataPDA);
@@ -59,7 +61,10 @@ export async function getUserNFTs(connection: Connection, user: PublicKey) {
     }
   );
 
-  console.log(tokens);
+  const asgardToken = tokens.filter(
+    (token) =>
+      token.account.data.parsed.info.mint === ASGARD_TOKEN_MINT.toString()
+  )[0];
 
   const filteredTokens = await Promise.all(
     tokens
@@ -81,13 +86,17 @@ export async function getUserNFTs(connection: Connection, user: PublicKey) {
       }))
   );
 
-  console.log(filteredTokens);
-
-  return filteredTokens.filter((filteredToken: any) => {
-    return (
-      filteredToken.mint &&
-      filteredToken.metadata.arweaveMetadata &&
-      filteredToken.metadata.onChainMetadata
-    );
-  });
+  return {
+    userNFTs: filteredTokens.filter((filteredToken: any) => {
+      return (
+        filteredToken.mint &&
+        filteredToken.metadata.arweaveMetadata &&
+        filteredToken.metadata.onChainMetadata
+      );
+    }),
+    asgardTokenBalance: asgardToken
+      ? asgardToken.account.data.parsed.info.tokenAmount.uiAmount
+      : 0,
+    asgardTokenAccount: asgardToken ? asgardToken.pubkey : null,
+  };
 }
