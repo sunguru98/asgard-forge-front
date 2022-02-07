@@ -107,6 +107,18 @@ const ForgePage = () => {
           localStorage.getItem('transactionProgress') || '{}'
         );
 
+        if (
+          transactionProgress.selectedSoldier ||
+          transactionProgress.selectedWeapon
+        ) {
+          toast({
+            title: 'Steps Restored',
+            description: 'Previous transaction related steps restored',
+            isClosable: true,
+            position: 'bottom',
+          });
+        }
+
         if (transactionProgress.selectedSoldier) {
           setSelectedSoldier(
             sNFTs.find(
