@@ -11,7 +11,7 @@ ReactDOM.render(
   <WalletKitProvider
     defaultNetwork='mainnet-beta'
     networkConfigs={{
-      'mainnet-beta': { endpoint: 'https://ssc-dao.genesysgo.net/' },
+      'mainnet-beta': { endpoint: process.env.REACT_APP_RPC_URL },
     }}
     app={{
       name: 'Celestial Forge',

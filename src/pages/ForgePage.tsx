@@ -211,7 +211,7 @@ const ForgePage = () => {
       console.log(`BUNDLR BALANCE: ${bundlrBalance}`);
 
       if (bundlrBalance < COST_FOR_UPLOAD) {
-        const isFunded = await fundAccount(205_000);
+        const isFunded = await fundAccount(205_000 - bundlrBalance);
         if (!isFunded)
           throw new Error('Account unable to fund for upload costs');
       }
@@ -433,6 +433,7 @@ const ForgePage = () => {
             </Text>
           </>
         ),
+        duration: 5000,
       });
 
       localStorage.removeItem('transactionProgress');

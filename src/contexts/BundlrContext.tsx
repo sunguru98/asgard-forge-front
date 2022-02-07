@@ -54,7 +54,8 @@ export const BundlrContextProvider: React.FC = ({ children }) => {
     const bundlrInstance: WebBundlr = new WebBundlr(
       'https://node1.bundlr.network',
       'solana',
-      phantomAdapter
+      phantomAdapter,
+      { providerUrl: process.env.REACT_APP_RPC_URL }
     );
     await bundlrInstance.ready();
     const add = await bundlrInstance.utils.getBundlerAddress('solana');
