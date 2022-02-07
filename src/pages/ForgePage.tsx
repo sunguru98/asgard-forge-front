@@ -119,7 +119,10 @@ const ForgePage = () => {
           });
         }
 
-        if (transactionProgress.selectedSoldier) {
+        if (
+          transactionProgress.selectedSoldier &&
+          transactionProgress.wallet === wallet.publicKey.toString()
+        ) {
           setSelectedSoldier(
             sNFTs.find(
               (nft) => nft.mint === transactionProgress.selectedSoldier
@@ -127,7 +130,10 @@ const ForgePage = () => {
           );
         }
 
-        if (transactionProgress.selectedWeapon) {
+        if (
+          transactionProgress.selectedWeapon &&
+          transactionProgress.wallet === wallet.publicKey.toString()
+        ) {
           setSelectedWeapon(
             wNFTs.find(
               (nft) => nft.mint === transactionProgress.selectedWeapon
@@ -239,6 +245,7 @@ const ForgePage = () => {
       let manifestId = transactionProgress.manifestLink;
 
       const initialData = {
+        wallet: wallet.publicKey.toString(),
         selectedSoldier: selectedSoldier.mint,
         selectedWeapon: selectedWeapon.mint,
       };
