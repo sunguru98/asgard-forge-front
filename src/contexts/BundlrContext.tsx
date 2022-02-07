@@ -69,6 +69,7 @@ export const BundlrContextProvider: React.FC = ({ children }) => {
         await bundlrInstance.fund(number);
         return true;
       } catch (err) {
+        console.error((err as Error).message);
         return false;
       }
     },
