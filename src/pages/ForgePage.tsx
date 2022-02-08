@@ -228,17 +228,22 @@ const ForgePage = () => {
 
       console.log(`BUNDLR BALANCE: ${bundlrBalance}`);
 
-      if (bundlrBalance < COST_FOR_UPLOAD) {
+      const transactionProgress = JSON.parse(
+        localStorage.getItem('transactionProgress') || '{}'
+      );
+
+      if (
+        !transactionProgress.manifestLink &&
+        !transactionProgress.jsonLink &&
+        !transactionProgress.imageLink &&
+        bundlrBalance < COST_FOR_UPLOAD
+      ) {
         const isFunded = await fundAccount(205_000 - bundlrBalance);
         if (!isFunded)
           throw new Error('Account unable to fund for upload costs');
       }
 
       setStep(2);
-
-      const transactionProgress = JSON.parse(
-        localStorage.getItem('transactionProgress') || '{}'
-      );
 
       let imageId = transactionProgress.imageLink;
       let jsonId = transactionProgress.jsonLink;
