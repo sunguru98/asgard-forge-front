@@ -713,7 +713,7 @@ const ForgePage = () => {
               >
                 {step >= 1 ? (
                   <>
-                    Please don't close or refresh. <br /> It may take several
+                    Please don't close or refresh. <br /> It may take 30 - 60
                     seconds for each step <br /> Processing Step {step} of 5
                   </>
                 ) : (
