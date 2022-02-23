@@ -1,8 +1,8 @@
 import { createCanvas } from 'canvas';
 import { UserNFT } from '../types';
 
-const BASE_LAYER_URL = `https://asgardforge.b-cdn.net/layers`;
-const WEAPON_LAYER_URL = `https://asgardforge.b-cdn.net/weapons`;
+const BASE_LAYER_URL = `${process.env.REACT_APP_CDN_URL}/layers`;
+const WEAPON_LAYER_URL = `${process.env.REACT_APP_CDN_URL}/weapons`;
 
 const IMAGE_WIDTH = 1080;
 const IMAGE_HEIGHT = 1080;
